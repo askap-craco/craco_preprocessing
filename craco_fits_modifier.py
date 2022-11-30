@@ -114,7 +114,7 @@ def time_blocks(vis, nt, flagant=[], flag_autos=True, return_arr = False, read_w
         d[blid][:, :, t, 0].real = row.data[...,0]
         d[blid][:, :, t, 0].imag = row.data[...,1]
         if read_weights:
-            d[blid[:, :, :, 1]] = row.data[..., 2]
+            d[blid][:, :, t, 1] = row.data[..., 2]
 
     if len(d) > 0:
         if t < nt - 1:
@@ -311,40 +311,79 @@ class CracoFitsReader:
         startrow = iblock * nt * self.nbl
         edit_vis_with_time_blocks(self.vis, block, nt, startrow)
 
-    def time_blocks(self, nt, return_arr = False):
+    def time_blocks(self, nt, return_arr = False, read_weights = False):
         '''
         Returns a sequence of baseline data in blocks of nt
         '''
         # WARNING TODO: ONLY RETURN BASELINES THAT HAVE BEEN RETURNED in .baselines
         # IF max_nbl has been set
-        return time_blocks(self.vis, nt, self.flagant, self.ignore_autos, return_arr=return_arr)
+        return time_blocks(self.vis, nt, self.flagant, self.ignore_autos, return_arr=return_arr, read_weights=read_weights)
 
 
-    def plot_block(self, iblock, block, pol='I'):
+    def plot_block(self, iblock, block, pol='I', apply_weights = True):
+        if apply_weights:
+            cblock = block[..., 0] * block[..., 1].real
+        else:
+            cblock = block[..., 0].copy()
+
         if pol.upper() == 'I':
-            bdata = block.mean(axis = 2)
+            bdata = cblock.mean(axis = 2)
+            bmask = block[..., 1].real.mean(axis=2)
         elif pol.upper() == 'XX':
-            bdata = block[:, :, 0, :]
+            bdata = cblock[:, :, 0, :]
+            bmask = block[..., 1].real[:, :, 0, :]
         elif pol.upper() == 'YY':
-            bdata = block[:, :, 1, :]
+            bdata = cblock[:, :, 1, :]
+            bmask = block[..., 1].real[:, :, 1, :]
         else:
             raise ValueError("Unknown pol type requested -> valied types are [I / XX / YY]")
         
-        data = np.abs(bdata).mean(axis=0)        #Sum across baselines
-        plt.figure()
-        ax1 = plt.add_subplot(221)
-        ax1.imshow(data.mean(axis=0), aspect='auto', interpolation='None')
+        #data = np.abs(bdata).mean(axis=0)        #Sum across baselines
+        fig = plt.figure()
+        ax1 = fig.add_subplot(321)
+        ax1.imshow(bdata.real.mean(axis=0), aspect='auto', interpolation='None')
+        if apply_weights:
+            ax1.imshow((1 - bmask).mean(axis=0), aspect='auto', interpolation='None', cmap='Greys_r')
         ax1.set_title("CAS")
         ax1.set_xlabel("Time [samp]")
-        ax1.set_ylable("Freq [chan]")
+        ax1.set_ylabel("Freq [chan]")
+
+
+        ax1i = fig.add_subplot(322)
+        ax1i.imshow(bdata.imag.mean(axis=0), aspect='auto', interpolation='None')
+        if apply_weights:
+            ax1i.imshow((1 - bmask).mean(axis=0), aspect='auto', interpolation='None', cmap='Greys_r')
+        ax1i.set_title("CAS")
+        ax1i.set_xlabel("Time [samp]")
+        ax1i.set_ylabel("Freq [chan]")
         
-        ax2 = plt.add_subplot(222)
+        ax2 = fig.add_subplot(323)
         ax2.imshow(np.abs(bdata).mean(axis=-1), aspect='auto', interpolation='None')
+        if apply_weights:
+            ax2.imshow((1 - bmask).mean(axis=-1), aspect='auto', interpolation='None', cmap='Greys_r')
         ax2.set_title("BL amps")
         ax2.set_xlabel("Freq [chan]")
         ax2.set_ylabel("BL index")
 
-        plt.title(f"Block = {iblock}")
+        ax3 = fig.add_subplot(325)
+        ax3.imshow(np.abs(bdata).mean(axis=1), aspect='auto', interpolation='None')
+        if apply_weights:
+            ax3.imshow((1 - bmask).mean(axis=1), aspect='auto', interpolation='None', cmap='Greys_r')
+        ax3.set_title("BL vs Freq")
+        ax3.set_xlabel("Time [samp]")
+        ax3.set_ylabel("BL index")
+
+        fig.suptitle(f"Block = {iblock}")
+
+        f2 = plt.figure()
+        np.random.seed(777)
+        bls_to_plot = (np.random.uniform(0, 1, 9) * len(bdata)).astype('int')
+        for ii in range(9):
+            axi = f2.add_subplot(3, 3, ii+1)
+            axi.imshow(np.abs(bdata[bls_to_plot[ii], :, :]), aspect='auto', interpolation='None')
+            axi.imshow((1 - bmask[bls_to_plot[ii], :, :]), aspect='auto', interpolation='None', cmap='Greys_r')
+            axi.set_title(f"BL {ii}")
+
         plt.show()
 
     def get_tstart(self):
