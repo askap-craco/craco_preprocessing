@@ -14,7 +14,7 @@ def main(args):
 
     rfi_st = RFI_cleaner(hdulist)
 
-    nt = 16
+    nt = 64
     ipol = 0
     blocker = hdulist.time_blocks(nt )
 
