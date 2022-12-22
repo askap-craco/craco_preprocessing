@@ -62,7 +62,7 @@ def get_bl_length(ant_table, bl):
     bl_length = ((ant_table[a1]['STABXYZ'] - ant_table[a2]['STABXYZ'])**2).sum()**0.5
     return bl_length
 
-def time_blocks(vis, nt, flagant=[], flag_autos=True, return_arr = False, read_weights = False):
+def time_blocks(vis, nt, flagant=[], flag_autos=True, return_arr = False, read_weights = False, read_abs=False):
     '''
     Generator that returns nt time blocks of the given visiblity table
 
@@ -108,13 +108,26 @@ def time_blocks(vis, nt, flagant=[], flag_autos=True, return_arr = False, read_w
 
 
         if blid not in list(d.keys()):
-            d[blid] = np.zeros((nchan, npol, nt, nweight), dtype=np.complex64)
-            d[blid][:, :, :, 1].real = 1       #Set the weight to one for all samples
+            if not read_abs:
+                d[blid] = np.zeros((nchan, npol, nt, nweight), dtype=np.complex64)
+                d[blid][:, :, :, 1].real = 1       #Set the weight to one for all samples
+            if read_abs:
+                d[blid] = np.zeros((nchan, npol, nt, nweight))
+                d[blid][:, :, :, 1] = 1       #Set the weight to one for all samples
+            
 
-        d[blid][:, :, t, 0].real = row.data[...,0]
-        d[blid][:, :, t, 0].imag = row.data[...,1]
-        if read_weights:
-            d[blid][:, :, t, 1] = row.data[..., 2]
+        if not read_abs:
+            d[blid][:, :, t, 0].real = row.data[...,0]
+            d[blid][:, :, t, 0].imag = row.data[...,1]
+        
+            if read_weights:
+                d[blid][:, :, t, 1] = row.data[..., 2]
+
+        if read_abs:
+            d[blid][:, :, t, 0] = np.sqrt(row.data[..., 0]**2 + row.data[..., 1]**2)
+
+            if read_weights:
+                d[blid][:, :, t, 1] = row.data[..., 2]
 
     if len(d) > 0:
         if t < nt - 1:
@@ -137,7 +150,7 @@ def edit_vis_with_time_blocks(vis, d, nt, startrow = 0):
     #for irow in xrange(nrows):
     for irow in range(nrows):
         irow = startrow + irow
-        if irow > nrows:
+        if irow >= nrows:
             break
         row = vis[irow]
         blid = row['BASELINE']
@@ -311,13 +324,13 @@ class CracoFitsReader:
         startrow = iblock * nt * self.nbl
         edit_vis_with_time_blocks(self.vis, block, nt, startrow)
 
-    def time_blocks(self, nt, return_arr = False, read_weights = False):
+    def time_blocks(self, nt, return_arr = False, read_weights = False, read_abs=False):
         '''
         Returns a sequence of baseline data in blocks of nt
         '''
         # WARNING TODO: ONLY RETURN BASELINES THAT HAVE BEEN RETURNED in .baselines
         # IF max_nbl has been set
-        return time_blocks(self.vis, nt, self.flagant, self.ignore_autos, return_arr=return_arr, read_weights=read_weights)
+        return time_blocks(self.vis, nt, self.flagant, self.ignore_autos, return_arr=return_arr, read_weights=read_weights, read_abs = read_abs)
 
 
     def plot_block(self, iblock, block, pol='I', apply_weights = True):
@@ -381,7 +394,8 @@ class CracoFitsReader:
         for ii in range(9):
             axi = f2.add_subplot(3, 3, ii+1)
             axi.imshow(np.abs(bdata[bls_to_plot[ii], :, :]), aspect='auto', interpolation='None')
-            axi.imshow((1 - bmask[bls_to_plot[ii], :, :]), aspect='auto', interpolation='None', cmap='Greys_r')
+            if apply_weights:
+                axi.imshow((1 - bmask[bls_to_plot[ii], :, :]), aspect='auto', interpolation='None', cmap='Greys_r')
             axi.set_title(f"BL {ii}")
 
         plt.show()
