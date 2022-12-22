@@ -51,7 +51,10 @@ def get_globally_bad_idxs_along_axis(block, axis):
 def get_freq_mask(baseline_data, threshold=3.0):
     #Take the mean along the pol axis and rms along the time axis
     #print("Shape of data recieved = ", baseline_data.shape)
+    
     bl_d = baseline_data[..., 0] * baseline_data[..., 1]        #apply the weights before getting the mask
+    #bl_d = baseline_data[..., 0]
+
     #print("shape of data after using masks = ", bl_d.shape)
     rms = bl_d.mean(axis=1).std(axis=-1)
     #print("Shape of rms = ", rms.shape)
@@ -61,8 +64,16 @@ def get_freq_mask(baseline_data, threshold=3.0):
 def get_time_mask(baseline_data, threshold = 3.0):
     #Take the mean along the pol axis and rms along freq axis
     bl_d = baseline_data[..., 0] * baseline_data[..., 1]
+    #bl_d = baseline_data[..., 0]
     rms = bl_d.mean(axis=1).std(axis=0)
     mask, votes = iqrm_mask(rms, radius = len(rms)/ 10, threshold=threshold)
+    return mask
+
+def get_cas_time_mask(cas_data, threshold=3.0):
+    #cd = cas_data
+    cd = cas_data[..., 0] * cas_data[..., 1]
+    rms = cd.mean(axis=1).std(axis=0)
+    mask, votes = iqrm_mask(rms, radius=len(rms)/10, threshold=threshold)
     return mask
 
 def convert_acm_to_complx_bl(acm, block):
@@ -190,9 +201,9 @@ class RFI_cleaner(object):
             a1, a2 = bl2ant(ibl)
             if a1 != a2:
                 continue
-            baseline_data = block_dict[ibl]
+            baseline_data = np.abs(block_dict[ibl])
             #print("Shape of baseline_data = ", baseline_data.shape)
-            autocorr_mask = get_freq_mask(baseline_data.real)
+            autocorr_mask = get_freq_mask(baseline_data)
             autocorr_masks[a1] = autocorr_mask
 
         return autocorr_masks
@@ -204,9 +215,10 @@ class RFI_cleaner(object):
         for ibl, baseline_data in block_dict.items():
             a1, a2 = bl2ant(ibl)
             if a1!=a2:
-                bl_d = baseline_data[..., 0] * baseline_data[..., 1]
+                bl_d = np.abs(baseline_data[..., 0])
+                #bl_d = baseline_data[..., 0] * baseline_data[..., 1]
                 #print("bl_d.shape = ", bl_d.shape)
-                cas_sum[..., 0] += np.abs(bl_d)
+                cas_sum[..., 0] += bl_d
         return cas_sum
 
     def clean_bl_using_autocorr_mask(self, ibl, bldata, autocorr_masks):
@@ -216,15 +228,12 @@ class RFI_cleaner(object):
 
 
     def get_IQRM_crosscorr_mask(self, ibl, bldata):
-        bl_mask_real = get_freq_mask(bldata.real, threshold = 5)
-        bl_mask_imag = get_freq_mask(bldata.imag, threshold = 5)
-        return bl_mask_real | bl_mask_imag
+        bl_mask = get_freq_mask(bldata, threshold = 5)
+        return bl_mask
 
     def get_IQRM_time_mask(self, ibl, bldata):
-        bl_mask_real = get_time_mask(bldata.real, threshold=3)
-        bl_mask_imag = get_time_mask(bldata.imag, threshold=3)
-
-        return bl_mask_real | bl_mask_imag
+        bl_mask = get_time_mask(bldata, threshold=3)
+        return bl_mask
 
     def IQRM_filter(self, block_dict, mask_autos = True, mask_corrs = True, mask_cas = True, mask_time = False):
         '''
@@ -238,35 +247,43 @@ class RFI_cleaner(object):
         cas_masks: dict
             Single element dictionary keyed by 0, valued by a 1-D numpy array of len nf
         '''
-        autocorr_masks = self.get_IQRM_autocorr_masks(block_dict)
+        autocorr_masks = {}
+        if mask_autos:
+            autocorr_masks = self.get_IQRM_autocorr_masks(block_dict)
         crosscorr_masks = {}
         cas_masks = {}
         time_masks = {}
-        for ibl, baseline_data in block_dict.items():
-            if mask_time:
-                time_mask = self.get_IQRM_time_mask(ibl, baseline_data)
-                #print("Shape of time_mask = ", time_mask.shape)
-                baseline_data[:, :, time_mask, 1] = 0
-                time_masks[ibl] = time_mask
-            if mask_autos:
-                self.clean_bl_using_autocorr_mask(ibl, baseline_data, autocorr_masks)
+
+        if mask_time or mask_autos or mask_corrs:
+            for ibl, baseline_data in block_dict.items():
+                if mask_time:
+                    time_mask = self.get_IQRM_time_mask(ibl, np.abs(baseline_data))
+                    #print("Shape of time_mask = ", time_mask.shape)
+                    baseline_data[:, :, time_mask, 1] = 0
+                    time_masks[ibl] = time_mask
+                if mask_autos:
+                    self.clean_bl_using_autocorr_mask(ibl, np.abs(baseline_data), autocorr_masks)
+
+                if mask_corrs:
+                    ant1, ant2 = bl2ant(ibl)
+
+                    if ant1 == ant2:
+                        continue
             
-            if mask_corrs:
-                ant1, ant2 = bl2ant(ibl)
-            
-                if ant1 == ant2:
-                    continue
-            
-                crosscorr_bl_mask = self.get_IQRM_crosscorr_mask(ibl, baseline_data)
-                baseline_data[crosscorr_bl_mask, :, :, 1] = 0
-                crosscorr_masks[ibl] = crosscorr_bl_mask
+                    crosscorr_bl_mask = self.get_IQRM_crosscorr_mask(ibl, np.abs(baseline_data))
+                    baseline_data[crosscorr_bl_mask, :, :, 1] = 0
+                    crosscorr_masks[ibl] = crosscorr_bl_mask
 
         if mask_cas:
             cas_sum = self.get_cas_sum(block_dict)
-            #Finally find bad samples in the ICS
+            #Finally find bad samples in the CAS
             cas_masks[0] = get_freq_mask(cas_sum)
+            cas_sum[cas_masks[0], :, :, 1] = 0
             for ibl, baseline_data in block_dict.items():
                 baseline_data[cas_masks[0], :, :, 1] = 0
+            cas_time_masks = get_cas_time_mask(cas_sum)
+            for ibl, baseline_data in block_dict.items():
+                baseline_data[:, :, cas_time_masks, 1] = 0
 
         return autocorr_masks, crosscorr_masks, cas_masks, time_masks
         
