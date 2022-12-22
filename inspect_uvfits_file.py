@@ -11,7 +11,7 @@ def main(args):
     f = fits.open(fname)
     hdulist = CracoFitsReader(f)
 
-    nt = 256
+    nt = args.nt
     blocker = hdulist.time_blocks(nt, return_arr=True, read_weights=args.apply_masks)
 
     for iblock, block in enumerate(blocker):
@@ -24,5 +24,6 @@ if __name__ == '__main__':
     a = argparse.ArgumentParser()
     a.add_argument("inputfile", type=str, help="Path to the input UV fits file to clean")
     a.add_argument("-apply_masks", action='store_true', help="Apply masks? (def = False)", default=False)
+    a.add_argument("-nt", type=int, help="nt per block to plot (def: 256)", default=256)
     args = a.parse_args()
     main(args)
