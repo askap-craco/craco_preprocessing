@@ -354,7 +354,8 @@ class CracoFitsReader:
         #data = np.abs(bdata).mean(axis=0)        #Sum across baselines
         fig = plt.figure()
         ax1 = fig.add_subplot(321)
-        ax1.imshow(bdata.real.mean(axis=0), aspect='auto', interpolation='None')
+        #ax1.imshow(bdata.real.mean(axis=0), aspect='auto', interpolation='None')
+        ax1.imshow(np.abs(bdata).mean(axis=0), aspect='auto', interpolation='None')
         if apply_weights:
             ax1.imshow((1 - bmask).mean(axis=0), aspect='auto', interpolation='None', cmap='Greys_r')
         ax1.set_title("CAS")
@@ -363,7 +364,7 @@ class CracoFitsReader:
 
 
         ax1i = fig.add_subplot(322)
-        ax1i.imshow(bdata.imag.mean(axis=0), aspect='auto', interpolation='None')
+        ax1i.plot(np.abs(bdata).mean(axis=0).mean(axis=0), aspect='auto', interpolation='None')
         if apply_weights:
             ax1i.imshow((1 - bmask).mean(axis=0), aspect='auto', interpolation='None', cmap='Greys_r')
         ax1i.set_title("CAS")
